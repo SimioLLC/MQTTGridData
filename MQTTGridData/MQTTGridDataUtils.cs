@@ -21,15 +21,18 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using uPLibrary.Networking.M2Mqtt;
 using uPLibrary.Networking.M2Mqtt.Messages;
+using System.Web.UI.WebControls;
+using System.Runtime.Remoting.Messaging;
 
 namespace MQTTGridData
 {
 
     public class MQTTGridDataUtils
     {
+        public static string[] QUALITY_OF_SERVICE = new string[] { "ATLEASTONCE", "EXACTLYONCE", "ATMOSTONCE" };
         public static string[] STATUS_SEVERITY = new string[] { "ERRORSANDWARNINGS", "ALL" };
         public static string[] EXPORT_TYPE = new string[] { "COLUMNMAPPING", "JSONOBJECT", "JSONARRAY" };
-        public static MqttClient _mqttClient;
+        public static MqttClient MQTTClient;
         public static List<string> Responses = new List<string>();
 
         /// <summary>
@@ -37,28 +40,81 @@ namespace MQTTGridData
         /// </summary>
         /// <returns>The XML data returned from the web request</returns>
         /// 
-        internal static void SubscribeToTopic(string table, string broker, string topic, out string responseError)
+        internal static void SubscribeToTopic(string tableName, string broker, string topic, string qos, out string responseError)
         {
-            string responseString = String.Empty;
             responseError = String.Empty;
 
-            // Create a unique client id
-            string clientId = $"{table}|{topic}";
             try
             {
-                _mqttClient = new MqttClient(broker);
-                _mqttClient.Connect(clientId);
+                if (MQTTClient == null)
+                {
+                    // Create a unique client id
+                    string clientId = $"{tableName}";
+                    MQTTClient = new MqttClient(broker);
+                    MQTTClient.Connect(clientId);
+                }
 
                 if (topic.Length > 0)
                 {
-                    _mqttClient.MqttMsgPublishReceived += MqttMsgPublishReceived;
-                    _mqttClient.Subscribe(new[] { topic }, new byte[] { MqttMsgBase.QOS_LEVEL_EXACTLY_ONCE });
+                    MQTTClient.MqttMsgPublishReceived += MqttMsgPublishReceived;
+                    if (qos == QUALITY_OF_SERVICE[0])
+                        MQTTClient.Subscribe(new[] { topic }, new byte[] { MqttMsgBase.QOS_LEVEL_AT_LEAST_ONCE }); 
+                    else if (qos == QUALITY_OF_SERVICE[1])
+                        MQTTClient.Subscribe(new[] { topic }, new byte[] { MqttMsgBase.QOS_LEVEL_EXACTLY_ONCE });
+                    else
+                        MQTTClient.Subscribe(new[] { topic }, new byte[] { MqttMsgBase.QOS_LEVEL_AT_MOST_ONCE });
                 }
             }
             catch (Exception ex)
             {
                 responseError = ex.Message;
             }            
+        }
+
+        internal static void UnSubscribeToTopic(string topic, out string responseError)
+        {
+            responseError = String.Empty;
+
+            try
+            {
+                if (topic.Length > 0)
+                {
+                    MQTTClient.MqttMsgPublishReceived -= MqttMsgPublishReceived;
+                    MQTTClient.Unsubscribe(new[] { topic });
+                }
+            }
+            catch (Exception ex)
+            {
+                responseError = ex.Message;
+            }
+        }
+
+        internal static void PublishMessage(string table, string broker, string topic, string message, string qos, bool retainMessage, out string responseError)
+        {
+            responseError = String.Empty;
+
+            try
+            {
+                if (MQTTClient == null)
+                {
+                    // Create a unique client id
+                    string clientId = $"{table}";
+                    MQTTClient = new MqttClient(broker);
+                    MQTTClient.Connect(clientId);
+                }
+
+                byte[] bytes = Encoding.ASCII.GetBytes(message);
+                if (qos == QUALITY_OF_SERVICE[0])
+                    MQTTClient.Publish(topic, bytes, MqttMsgBase.QOS_LEVEL_AT_LEAST_ONCE, retainMessage);
+                else if (qos == QUALITY_OF_SERVICE[1])
+                    MQTTClient.Publish(topic, bytes, MqttMsgBase.QOS_LEVEL_EXACTLY_ONCE, retainMessage);
+                else
+                    MQTTClient.Publish(topic, bytes, MqttMsgBase.QOS_LEVEL_AT_MOST_ONCE, retainMessage);
+            }
+            catch (Exception ex)
+            {
+                responseError = ex.Message;
+            }
         }
 
         private static void MqttMsgPublishReceived(object sender, MqttMsgPublishEventArgs e)
@@ -99,43 +155,14 @@ namespace MQTTGridData
             return xmlDoc.InnerXml;
         }
 
-        internal static void MapFinalValuesFromExportRecordValues(INamedSimioCollection<IAddInPropertyValue> overallSettings, INamedSimioCollection<IAddInPropertyValue> tableSettings,
-        IDictionary<string, string> exportRecordValues, ref string finalUrl, ref string finalMessage, ref IDictionary<string, string> finalFormParameters)
-        {
-            var url = (string)overallSettings?["URL"]?.Value;
-            var message = (string)overallSettings?["Message"]?.Value;
-            var formParametersStr = (string)tableSettings?["FormParameters"]?.Value;
-            var tokenReplacementsStr = (string)tableSettings?["TokenReplacements"]?.Value;
-
-            //
-            // Resolve to 'final' values
-            //
-            var tokenReplacements = AddInPropertyValueHelper.NameValuePairsFromString(tokenReplacementsStr);
-            finalUrl = TokenReplacement.ResolveString(url, tokenReplacements, exportRecordValues, null);
-            finalMessage = TokenReplacement.ResolveString(message, tokenReplacements, exportRecordValues, null);
-            var finalFormParametersStr = TokenReplacement.ResolveString(formParametersStr, tokenReplacements, exportRecordValues, null);
-            finalFormParameters = AddInPropertyValueHelper.NameValuePairsFromString(finalFormParametersStr);
-        }
-
-        internal static string iDictionaryToString(IDictionary<string, string> dictionary)
-        {
-            string dictionaryString = "{";
-            foreach (KeyValuePair<string, string> keyValues in dictionary)
-            {
-                dictionaryString += keyValues.Key + " : " + keyValues.Value + ", ";
-            }
-            return dictionaryString.TrimEnd(',', ' ') + "}";
-        }
-
-        internal static void logStatus(string dataConnector, string pathAndFilename, string sendText, string responseError, string responseWarning, string deliminator, double exportStartTimeOffsetHours)
+        internal static void logStatus(string dataConnector, string pathAndFilename, string sendText, string responseError, string deliminator, double exportStartTimeOffsetHours)
         {
             try
             {
                 using (System.IO.StreamWriter file = new System.IO.StreamWriter(pathAndFilename, true))
                 {
                     string statusText = System.DateTime.Now.AddHours(exportStartTimeOffsetHours).ToString() + deliminator + dataConnector + deliminator + sendText + deliminator;
-                    if (responseError.Length == 0 && responseWarning.Length == 0) statusText += "Success" + deliminator + responseError;
-                    else if (responseError.Length == 0) statusText += "Warning" + deliminator + responseWarning;
+                    if (responseError.Length == 0) statusText += "Success" + deliminator + responseError;
                     else statusText += "Error" + deliminator + responseError;
                     file.WriteLine(statusText);
                 }

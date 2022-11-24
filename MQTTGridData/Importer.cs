@@ -16,7 +16,6 @@ using System.IO;
 using System.Xml.XPath;
 using System.Xml;
 using System.Windows.Forms;
-using Microsoft.Identity.Client;
 
 namespace MQTTGridData
 {
@@ -46,6 +45,16 @@ namespace MQTTGridData
             topicProp.Description = "Subscribe Topic.";
             topicProp.DefaultValue = String.Empty;
 
+            var qualityOfServiceProp = schema.PerTableProperties.AddListProperty("QualityOfService", MQTTGridDataUtils.QUALITY_OF_SERVICE);
+            qualityOfServiceProp.DisplayName = "Quality Of Service";
+            qualityOfServiceProp.Description = "Quality Of Service.";
+            qualityOfServiceProp.DefaultValue = MQTTGridDataUtils.QUALITY_OF_SERVICE[0].ToString();
+
+            var waitSecondsForRetainedMessagesProp = schema.PerTableProperties.AddRealProperty("WaitSecondsForRetainedMessages");
+            waitSecondsForRetainedMessagesProp.DisplayName = "Wait Seconds For Retained Messages";
+            waitSecondsForRetainedMessagesProp.Description = "Wait Seconds For Retained Messages.";
+            waitSecondsForRetainedMessagesProp.DefaultValue = 1.0;
+
             var stylesheetProp = schema.PerTableProperties.AddXSLTProperty("Stylesheet");
             stylesheetProp.Description = "The transform to apply to the data returned from the web request.";
             stylesheetProp.DefaultValue =
@@ -74,12 +83,15 @@ namespace MQTTGridData
             // This is called when the stylesheet editor pops up. We want to provide the XML data we would expect to come back during an actual import,
             //  so we call that here.
             List<string> debugFiles = new List<string>();
-            if (Importer.GetWebData(e.HierarchicalProperties[0], e.OtherProperties, null, null, out var broker, out var topic,  out _, ref debugFiles, out var webRequestResult, out var error) == false)
+            if (Importer.GetMQTTData(e.HierarchicalProperties[0], e.OtherProperties, null, null, out var broker, out var topic, out _, out _, ref debugFiles, out var requestResult, out var error) == false)
             {
                 // If there is an error, let the user know by setting the returned string (that should be displayed to them) to the error
-                webRequestResult[0] = "Broker = " + broker + " on Topic = " + topic + Environment.NewLine + "Error = " + error;
+                string message = "Broker = " + broker + " on Topic = " + topic + Environment.NewLine + "Error = " + error;
+
+                if (requestResult.Count > 0) requestResult[0] = message;
+                else requestResult.Add(message);
             }
-            e.XML = webRequestResult[0];
+            e.XML = requestResult[0];
         }
     }
 
@@ -93,11 +105,12 @@ namespace MQTTGridData
         /// Call to get the web data, either via http on via the sessionCache
         /// </summary>
         /// <returns>True if successful, False if there is an error</returns>
-        internal static bool GetWebData(INamedSimioCollection<IAddInPropertyValue> overallSettings, INamedSimioCollection<IAddInPropertyValue> tableSettings,
-            INamedSimioCollection<IGridDataSettings> gridDataSettings, string tableName, out string broker, out string topic, out string stylesheet, ref List<string> requestDebugFiles, 
-            out List<string> results, out string error)
+        internal static bool GetMQTTData(INamedSimioCollection<IAddInPropertyValue> overallSettings, INamedSimioCollection<IAddInPropertyValue> tableSettings,
+            INamedSimioCollection<IGridDataSettings> gridDataSettings, string tableName, out string broker, out string topic, out string qualityOfService, 
+            out string stylesheet, ref List<string> requestDebugFiles, 
+            out List<string> requestResults, out string error)
         {
-            results = new List<string>();
+            requestResults = new List<string>();
             error = null;
             stylesheet = null;
             string requestDebugFileFolder = null;
@@ -106,6 +119,8 @@ namespace MQTTGridData
             // Harvest raw values
             broker = (string)overallSettings?["Broker"]?.Value;
             topic = (string)tableSettings?["Topic"]?.Value;
+            qualityOfService = (string)tableSettings?["QualityOfService"]?.Value;
+            var waitSecondsForRetainedMessages = (double)tableSettings?["WaitSecondsForRetainedMessages"]?.Value;
             stylesheet = (string)tableSettings?["Stylesheet"]?.Value;
             requestDebugFileFolder = (string)tableSettings?["RequestDebugFileFolder"]?.Value;
             responseDebugFileFolder = (string)tableSettings?["ResponseDebugFileFolder"]?.Value;
@@ -153,7 +168,7 @@ namespace MQTTGridData
                             if (MQTTGridDataUtils.checkIsProbablyJSONObject(result))
                             {
                                 XmlDocument xmlDoc = Newtonsoft.Json.JsonConvert.DeserializeXmlNode(result, "data");
-                                results.Add(xmlDoc.OuterXml);
+                                requestResults.Add(xmlDoc.OuterXml);
                             }
                         }
                     }
@@ -161,15 +176,23 @@ namespace MQTTGridData
                 else
                 {
                     MQTTGridDataUtils.Responses.Clear();
-                    MQTTGridDataUtils.SubscribeToTopic(tableName, broker, topic, out var subscribeError);
+                    MQTTGridDataUtils.SubscribeToTopic(tableName, broker, topic, qualityOfService, out var subscribeError);
                     if (subscribeError.Length > 0)
                     {
+                        if (MQTTGridDataUtils.MQTTClient.IsConnected) MQTTGridDataUtils.MQTTClient.Disconnect();
+                        MQTTGridDataUtils.MQTTClient = null;
                         throw new Exception(subscribeError);
                     }
-                    System.Threading.Thread.Sleep(1000);
-                    foreach(var msg in MQTTGridDataUtils.Responses)
+
+                    System.Threading.Thread.Sleep((int)Math.Floor(waitSecondsForRetainedMessages * 1000));
+                    MQTTGridDataUtils.UnSubscribeToTopic(topic, out var unsubscribeError);
+                    if (unsubscribeError.Length > 0)
                     {
-                        results.Add(MQTTGridDataUtils.ParseDataToXML(msg, responseDebugFileFolder, out var parseError));
+                        throw new Exception(unsubscribeError);
+                    }
+                    foreach (var msg in MQTTGridDataUtils.Responses)
+                    {
+                        requestResults.Add(MQTTGridDataUtils.ParseDataToXML(msg, responseDebugFileFolder, out var parseError));
                         if (parseError.Length > 0)
                         {
                             throw new Exception(parseError);
@@ -177,10 +200,12 @@ namespace MQTTGridData
                     }                    
                     System.Diagnostics.Trace.TraceInformation("Success Retrieving Data from Broker: " + broker + " on Topic " + topic);
                 }
+                if (MQTTGridDataUtils.MQTTClient.IsConnected) MQTTGridDataUtils.MQTTClient.Disconnect();
+                MQTTGridDataUtils.MQTTClient = null;
             }
             catch (Exception e)
             {
-                results.Clear();
+                requestResults.Clear();
                 error = $"There was an error attempting to connect to Broker: '{broker}' on Topic: {topic}.  Response: {e.Message}";
 
 #warning Remove this stack trace addition, we probably don't want to leak this information
@@ -188,6 +213,8 @@ namespace MQTTGridData
 
                 // This is ok, it should just write to the local machine... at least we *think* that's ok...
                 System.Diagnostics.Trace.TraceError(error + "\nStack trace:" + e.StackTrace);
+                if (MQTTGridDataUtils.MQTTClient.IsConnected) MQTTGridDataUtils.MQTTClient.Disconnect();
+                MQTTGridDataUtils.MQTTClient = null;
                 return false;
             }           
 
@@ -200,9 +227,9 @@ namespace MQTTGridData
             var mergedDataSet = new DataSet();
             List<string> requestDebugFiles = new List<string>();
 
-            if (GetWebData(openContext.Settings.Properties, openContext.Settings.GridDataSettings[openContext.TableName].Properties,
-                openContext.Settings.GridDataSettings, openContext.TableName, out var broker, out var topic, out var stylesheet,
-                ref requestDebugFiles, out var results, out var error) == false)
+            if (GetMQTTData(openContext.Settings.Properties, openContext.Settings.GridDataSettings[openContext.TableName].Properties,
+                openContext.Settings.GridDataSettings, openContext.TableName, out var broker, out var topic, out var qualityOfService, 
+                out var stylesheet, ref requestDebugFiles, out var requestResults, out var error) == false)
             {
                 return OpenImportDataResult.Failed(error);
             }
@@ -210,11 +237,11 @@ namespace MQTTGridData
             // Generate the DataSet. Note that we are NOT caching the resulting DataSet here. Unlike the web request, we believe the combination of URL + stylesheet will 
             //  probably generally be unique per table. Plus, unlike the web request, we don't need to worry about temporal changes causes changes in the underlying data.
             //
-            if (results.Count > 0)
+            if (requestResults.Count > 0)
             { 
-                foreach (var result in results)
+                foreach (var requestResult in requestResults)
                 {
-                    var transformedResult = Simio.Xml.XsltTransform.TransformXmlToDataSet(result, stylesheet, null);
+                    var transformedResult = Simio.Xml.XsltTransform.TransformXmlToDataSet(requestResult, stylesheet, null);
                     if (transformedResult.XmlTransformError != null)
                         return new OpenImportDataResult() { Result = GridDataOperationResult.Failed, Message = transformedResult.XmlTransformError };
                     if (transformedResult.DataSetLoadError != null)
@@ -229,7 +256,7 @@ namespace MQTTGridData
                         mergedDataSet.AcceptChanges();
                     }
                     var xmlDoc = new XmlDocument();
-                    xmlDoc.LoadXml(result);
+                    xmlDoc.LoadXml(requestResult);
                 }
             }
             else
@@ -275,7 +302,6 @@ namespace MQTTGridData
 
         public void Dispose()
         {
-
         }
     }
 
@@ -355,6 +381,8 @@ namespace MQTTGridData
 
         public void Dispose()
         {
+            if (MQTTGridDataUtils.MQTTClient.IsConnected) MQTTGridDataUtils.MQTTClient.Disconnect();
+            MQTTGridDataUtils.MQTTClient = null;
         }
 
         #endregion

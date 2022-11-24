@@ -10,6 +10,8 @@ using System.Data;
 using System.Globalization;
 using System.Xml.Serialization;
 using Newtonsoft.Json;
+using System.Net.NetworkInformation;
+using uPLibrary.Networking.M2Mqtt;
 
 namespace MQTTGridData
 {
@@ -50,20 +52,20 @@ namespace MQTTGridData
             topicProp.Description = "Subscribe Topic.";
             topicProp.DefaultValue = String.Empty;
 
+            var qualityOfServiceProp = schema.PerTableProperties.AddListProperty("QualityOfService", MQTTGridDataUtils.QUALITY_OF_SERVICE);
+            qualityOfServiceProp.DisplayName = "Quality Of Service";
+            qualityOfServiceProp.Description = "Quality Of Service.";
+            qualityOfServiceProp.DefaultValue = MQTTGridDataUtils.QUALITY_OF_SERVICE[0].ToString();
+
+            var retainMessageProp = schema.PerTableProperties.AddBooleanProperty("RetainMessage");
+            retainMessageProp.DisplayName = "Retain Message";
+            retainMessageProp.Description = "Retain Message.";
+            retainMessageProp.DefaultValue = true;
+
             var tableTokenReplacementsProp = schema.PerTableProperties.AddNameValuePairsProperty("TokenReplacements", null);
             tableTokenReplacementsProp.DisplayName = "Token Replacements";
             tableTokenReplacementsProp.Description = "Values used for tokens specified in either the URL or Message of the Data Connector. The values here can themselves contains tokens of the form ${col:Name} to use column values by colum name.";
             tableTokenReplacementsProp.DefaultValue = String.Empty;
-
-            var numberOfRowsPerCallProp = schema.PerTableProperties.AddRealProperty("NumberOfRowsPerCall");
-            numberOfRowsPerCallProp.DisplayName = "Number Of Rows Per Call";
-            numberOfRowsPerCallProp.Description = "Defines number of rows from the table that should be sent per web API call.   " +
-                "If this number is less that the number or rows in the table, the export will call the web API multiple time.   " +
-                "By default, this value should be set to 1.    " +
-                "If set to one, a Row Message and Row Delimiter are not needed.  " +
-                "The column mapping can happen within the Message.   T" +
-                "he Row Message can still be use if the value is set to 1, but the Row Delimiter will not be used since a message will be sent after each row is read.";
-            numberOfRowsPerCallProp.DefaultValue = 1;
 
             var exportTypePropTableProperties = schema.PerTableProperties.AddListProperty("ExportType", MQTTGridDataUtils.EXPORT_TYPE);
             exportTypePropTableProperties.DisplayName = "Export Type";
@@ -118,24 +120,24 @@ namespace MQTTGridData
         {
             var mySettings = openContext.Settings;
             var overallSettings = openContext.Settings.Properties;
+            var table = openContext.GridDataName;
             var exportStartTimeString = (string)overallSettings?["ExportStartTimeString"]?.Value;
             var exportStartTime = DateTime.MinValue;
             if (DateTime.TryParse(exportStartTimeString, out exportStartTime)) { }
             else exportStartTime = DateTime.Now;
             var exportStartTimeOffsetHours = (exportStartTime - DateTime.Now).TotalHours;
             var tableSettings = openContext.Settings.GridDataSettings[openContext.GridDataName]?.Properties;
-            var numberOfRowsPerCall = Convert.ToInt32(tableSettings?["NumberOfRowsPerCall"]?.Value);
-            if (numberOfRowsPerCall < 0) throw new Exception("Number Of Rows Per Call must be greater than zero.");
             int currentRowNumber = 0;
-            int currentRowNumberInCall = 0;
             var broker = (string)overallSettings?["Broker"]?.Value;
-            var topic = (string)tableSettings?["Stylesheet"]?.Value;
-            var stylesheet = (string)tableSettings?["Stylesheet"]?.Value;
+            var message = (string)overallSettings?["Message"]?.Value;
+            var topic = (string)tableSettings?["Topic"]?.Value;
+            var qualityOfService = (string)tableSettings?["QualityOfService"]?.Value;
+            var retainMessage = (bool)tableSettings?["RetainMessage"]?.Value;
             var requestDebugFileFolder = (string)tableSettings?["RequestDebugFileFolder"]?.Value;
             var exportType = (string)tableSettings?["ExportType"]?.Value;
             var rowMessage = (string)tableSettings?["RowMessage"]?.Value;
             string currentRowMessage = String.Empty;
-            string currentCallRows = String.Empty;
+            string currentMessage = String.Empty;
             var rowDelimiter = (string)tableSettings?["RowDelimiter"]?.Value;
             var statusFileName = (string)tableSettings?["StatusFileName"]?.Value;
             var statusDelimiter = (string)tableSettings?["StatusDelimiter"]?.Value;
@@ -162,107 +164,113 @@ namespace MQTTGridData
 
             int numberOfColumns = openContext.Records.Columns.Count();
             int numberOfRows = openContext.Records.Count();
-            var finalMessage = string.Empty;
+
+            var tokenReplacementsStr = (string)tableSettings?["TokenReplacements"]?.Value;
+            var tokenReplacements = AddInPropertyValueHelper.NameValuePairsFromString(tokenReplacementsStr);
 
             foreach (var record in openContext.Records)
             {
                 currentRowNumber++;
-                currentRowNumberInCall++;
                 var thisRecordValues = new Dictionary<string, string>();
-                if (exportType.ToUpper() == "COLUMNMAPPING")
-                {                    
-                    int colIndex = 0;
-                    foreach (var col in openContext.Records.Columns)
-                    {
-                        thisRecordValues[col.Name] = GetFormattedStringValue(record, colIndex);
-                        colIndex++;
-                    }
-
-                    MQTTGridDataUtils.MapFinalValuesFromExportRecordValues(overallSettings, tableSettings, thisRecordValues, ref finalUrl, ref finalMessage, ref finalFormParameters);
-                }
 
                 try
                 {
-                    string webRequestResult = null;
-                    
-                    if (exportType.ToUpper() == "COLUMNMAPPING")
+                    if (exportType.ToUpper() == "COLUMNMAPPING" && rowMessage.Length == 0)
                     {
-                        currentRowMessage = TokenReplacement.ResolveString(rowMessage, null, thisRecordValues, null);
-
-                        if (currentCallRows.Length > 0)
-                            currentCallRows += rowDelimiter + currentRowMessage;
-                        else
-                            currentCallRows = currentRowMessage;
-                    }
-                    else if (exportType.ToUpper() == "JSONOBJECT")
-                    {
-                        object[] thisRow = new object[numberOfColumns];
-                        int columnIndex = 0;
+                        int colIndex = 0;
                         foreach (var col in openContext.Records.Columns)
                         {
-                            string formattedValue = GetFormattedStringValue(record, columnIndex);
-                            thisRow[columnIndex] = formattedValue;
-                            columnIndex++;
+                            thisRecordValues[col.Name] = GetFormattedStringValue(record, colIndex);
+                            colIndex++;
                         }
 
-                        dataTable.Rows.Add(thisRow);
+                        var finalMessage = TokenReplacement.ResolveString(message, tokenReplacements, thisRecordValues);
+                        var finalTopic = TokenReplacement.ResolveString(topic, tokenReplacements, thisRecordValues);
+
+                        string traceText = "Broker:" + broker + " - Topic:" + finalTopic + " - Message:" + finalMessage;
+                        System.Diagnostics.Trace.TraceInformation(traceText);
+                        MQTTGridDataUtils.PublishMessage(table, broker, finalTopic, finalMessage, qualityOfService, retainMessage, out var responseError);
+                        if (statusFileName.Length > 0 && (statusSeverity.ToLower().Contains("all") || responseError.Length > 0))
+                        {
+                            MQTTGridDataUtils.logStatus(openContext.GridDataName, statusFileName, traceText, responseError, statusDelimiter, exportStartTimeOffsetHours);
+                        }
+                        if (responseError.Length > 0) throw new Exception(responseError);
                     }
                     else
                     {
-                        object[] thisRow = new object[numberOfColumns];
-                        int columnIndex = 0;
-                        foreach (var col in openContext.Records.Columns)
+                        if (exportType.ToUpper() == "COLUMNMAPPING")
                         {
-                            thisRow[columnIndex] = record.GetNativeObject(columnIndex);
-                            columnIndex++;
-                        }                               
-                                
-                        dataArray.Add(thisRow);
-                    }
+                            currentRowMessage = TokenReplacement.ResolveString(rowMessage, null, thisRecordValues);
 
-                    if (numberOfRowsPerCall <= currentRowNumberInCall || currentRowNumber >= numberOfRows)
-                    {
-                        if (exportType.ToUpper() == "JSONOBJECT")
-                        {
-                            currentCallRows = JsonConvert.SerializeObject(dataTable);
-                            dataTable.Clear();
-                            var rowCallTokenReplacement = new Dictionary<string, string>()
-                            {
-                                ["jsonobject"] = currentCallRows
-                            };
-                            finalMessage = TokenReplacement.ResolveString(finalMessage, rowCallTokenReplacement, null, null);
+                            if (currentMessage.Length > 0)
+                                currentMessage += rowDelimiter + currentRowMessage;
+                            else
+                                currentMessage = currentRowMessage;
                         }
-                        else if (exportType.ToUpper() == "JSONARRAY")
+                        else if (exportType.ToUpper() == "JSONOBJECT")
                         {
-                            currentCallRows = JsonConvert.SerializeObject(dataArray);
-                            dataArray.Clear();
-                            var rowCallTokenReplacement = new Dictionary<string, string>()
+                            object[] thisRow = new object[numberOfColumns];
+                            int columnIndex = 0;
+                            foreach (var col in openContext.Records.Columns)
                             {
-                                ["jsonarray"] = currentCallRows
-                            };
-                            finalMessage = TokenReplacement.ResolveString(finalMessage, rowCallTokenReplacement, null, null);
+                                string formattedValue = GetFormattedStringValue(record, columnIndex);
+                                thisRow[columnIndex] = formattedValue;
+                                columnIndex++;
+                            }
+
+                            dataTable.Rows.Add(thisRow);
                         }
                         else
                         {
-                            var rowCallTokenReplacement = new Dictionary<string, string>()
+                            object[] thisRow = new object[numberOfColumns];
+                            int columnIndex = 0;
+                            foreach (var col in openContext.Records.Columns)
                             {
-                                ["rowmessage"] = currentCallRows
-                            };
-                            finalMessage = TokenReplacement.ResolveString(finalMessage, rowCallTokenReplacement, null, null);
+                                thisRow[columnIndex] = record.GetNativeObject(columnIndex);
+                                columnIndex++;
+                            }
+
+                            dataArray.Add(thisRow);
                         }
 
-                        string traceText = "URL:" + broker + " - Topic:" + topic + " - Message:" + finalMessage;
-                        System.Diagnostics.Trace.TraceInformation(traceText);
-                        MQTTGridDataUtils.SubscribeToGetXmlData(headers, null, authenticationtype, credentials, useDefaultCredentials, networkCredential, msalParameters, finalUrl, method, finalMessage, finalFormParameters, responseDebugFileFolder, out var responseHeaders, out var responseCookies, out var responseError, out var responseWarning);
-                        if (statusFileName.Length > 0 && (statusSeverity.ToLower().Contains("all") || responseWarning.Length > 0 || responseError.Length > 0))
+                        if (currentRowNumber >= numberOfRows || (rowMessage.Length == 0 && exportType.ToUpper() == "COLUMNMAPPING"))
                         {
-                            MQTTGridDataUtils.logStatus(openContext.GridDataName, statusFileName, traceText, responseError, responseWarning, statusDelimiter, exportStartTimeOffsetHours);
+                            if (exportType.ToUpper() == "JSONOBJECT")
+                            {
+                                currentMessage = JsonConvert.SerializeObject(dataTable);
+                                dataTable.Clear();
+                                var rowCallTokenReplacement = new Dictionary<string, string>()
+                                {
+                                    ["jsonobject"] = currentMessage
+                                };
+                            }
+                            else if (exportType.ToUpper() == "JSONARRAY")
+                            {
+                                currentMessage = JsonConvert.SerializeObject(dataArray);
+                                dataArray.Clear();
+                                var rowCallTokenReplacement = new Dictionary<string, string>()
+                                {
+                                    ["jsonarray"] = currentMessage
+                                };
+                            }
+                            else
+                            {
+                                var rowCallTokenReplacement = new Dictionary<string, string>()
+                                {
+                                    ["rowmessage"] = currentMessage
+                                };
+                            }
+
+                            string traceText = "Broker:" + broker + " - Topic:" + topic + " - Message:" + currentMessage;
+                            System.Diagnostics.Trace.TraceInformation(traceText);
+                            MQTTGridDataUtils.PublishMessage(table, broker, topic, currentMessage, qualityOfService, retainMessage, out var responseError);
+                            if (statusFileName.Length > 0 && (statusSeverity.ToLower().Contains("all") || responseError.Length > 0))
+                            {
+                                MQTTGridDataUtils.logStatus(openContext.GridDataName, statusFileName, traceText, responseError, statusDelimiter, exportStartTimeOffsetHours);
+                            }
+                            if (responseError.Length > 0) throw new Exception(responseError);
                         }
-                        currentRowNumberInCall = 0;
-                        currentCallRows = String.Empty;
-                        if (responseError.Length > 0) throw new Exception(responseError);
-                    }                               
-  
+                    }  
                 }
                 catch (Exception e)
                 {
@@ -281,7 +289,9 @@ namespace MQTTGridData
                 System.Diagnostics.Trace.TraceError(traceErrors);
 
                 return OpenExportDataResult.Failed(errors);
-            }            
+            }
+            if (MQTTGridDataUtils.MQTTClient.IsConnected) MQTTGridDataUtils.MQTTClient.Disconnect();
+            MQTTGridDataUtils.MQTTClient = null;
         }
 
         private static void GetValues(string tableName, IGridDataOverallSettings settings, out string folderName, out string fileName, out bool bUseHeaders, out string separator, out string culture)
@@ -301,15 +311,17 @@ namespace MQTTGridData
             if (context == null)
                 return null;
 
-            var url = (string)context.Settings.Properties["URL"]?.Value;
+            var broker = (string)context.Settings.Properties["Broker"]?.Value;
             var tokenReplacementsStr = (string)context.Settings.GridDataSettings[context.GridDataName]?.Properties["TokenReplacements"]?.Value;
             var tokenReplacements = AddInPropertyValueHelper.NameValuePairsFromString(tokenReplacementsStr);
 
-            return $"Bound to URL: {TokenReplacement.ResolveString(url, tokenReplacements, null, null) ?? "[None]"}";
+            return $"Bound to Broker: {TokenReplacement.ResolveString(broker, tokenReplacements, null) ?? "[None]"}";
         }
 
         public void Dispose()
         {
+            if (MQTTGridDataUtils.MQTTClient.IsConnected) MQTTGridDataUtils.MQTTClient.Disconnect();
+            MQTTGridDataUtils.MQTTClient = null;
         }
 
         private static string GetFormattedStringValue(IGridDataExportRecord record, Int32 colIdx)

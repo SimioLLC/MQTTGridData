@@ -19,7 +19,7 @@ namespace MQTTGridData
         /// <param name="originalString">The original string with tokens to replace</param>
         /// <param name="tokenReplacements">The name-value pairs for tokens</param>
         /// <returns>A new string with the tokens replaced with the given values</returns>
-        public static string ResolveString(string originalString, IDictionary<string, string> tokenReplacements, IDictionary<string, string> columnValues, IDictionary<string, string> headerValues)
+        public static string ResolveString(string originalString, IDictionary<string, string> tokenReplacements, IDictionary<string, string> columnValues)
         {
             if (originalString == null)
                 return null;
@@ -33,7 +33,7 @@ namespace MQTTGridData
                 if (tokenReplacements != null && tokenReplacements.TryGetValue(token, out var tokenValue))
                 {
                     // Token values can themselves reference column values. We "cascade" the replacements from column values -> table token replacements
-                    return ResolveString(tokenValue, tokenReplacements, columnValues, headerValues);
+                    return ResolveString(tokenValue, tokenReplacements, columnValues);
                 }
 
                 if (columnValues != null && token.StartsWith("col:", StringComparison.OrdinalIgnoreCase))
@@ -45,14 +45,6 @@ namespace MQTTGridData
                     }
                 }
 
-                if (headerValues != null && token.StartsWith("header:", StringComparison.OrdinalIgnoreCase))
-                {
-                    token = token.Substring(7);
-                    if (headerValues.TryGetValue(token, out var headerValue))
-                    {
-                        return headerValue;
-                    }
-                }
                 if (token == "rowmessage") return "${rowmessage}";
                 else if (token == "jsonobject") return "${jsonobject}";
                 else if (token == "jsonarray") return "${jsonarray}";
