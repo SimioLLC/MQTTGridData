@@ -16,6 +16,7 @@ using System.IO;
 using System.Xml.XPath;
 using System.Xml;
 using System.Windows.Forms;
+using System.Runtime.Remoting.Contexts;
 
 namespace MQTTGridData
 {
@@ -40,10 +41,10 @@ namespace MQTTGridData
             brokerProp.Description = "Broker Name or IP Address.";
             brokerProp.DefaultValue = String.Empty;
 
-            var topicProp = schema.PerTableProperties.AddStringProperty("Topic");
-            topicProp.DisplayName = "Topic";
-            topicProp.Description = "Subscribe Topic.";
-            topicProp.DefaultValue = String.Empty;
+            var topicsProp = schema.PerTableProperties.AddNameValuePairsProperty("Topics", null);
+            topicsProp.DisplayName = "Topics";
+            topicsProp.Description = "Subscribe Topic.";
+            topicsProp.DefaultValue = String.Empty;
 
             var qualityOfServiceProp = schema.PerTableProperties.AddListProperty("QualityOfService", MQTTGridDataUtils.QUALITY_OF_SERVICE);
             qualityOfServiceProp.DisplayName = "Quality Of Service";
@@ -83,10 +84,12 @@ namespace MQTTGridData
             // This is called when the stylesheet editor pops up. We want to provide the XML data we would expect to come back during an actual import,
             //  so we call that here.
             List<string> debugFiles = new List<string>();
-            if (Importer.GetMQTTData(e.HierarchicalProperties[0], e.OtherProperties, null, null, out var broker, out var topic, out _, out _, ref debugFiles, out var requestResult, out var error) == false)
+            if (Importer.GetMQTTData(e.HierarchicalProperties[0], e.OtherProperties, null, null, out var broker, out var topics, out _, out _, ref debugFiles, out var requestResult, out var error) == false)
             {
+                var topicsArr = topics.Select(z => z.Value).ToArray();
+                var topicsStr = String.Join(",", topicsArr);
                 // If there is an error, let the user know by setting the returned string (that should be displayed to them) to the error
-                string message = "Broker = " + broker + " on Topic = " + topic + Environment.NewLine + "Error = " + error;
+                string message = "Broker = " + broker + " on Topics = " + topicsStr + Environment.NewLine + "Error = " + error;
 
                 if (requestResult.Count > 0) requestResult[0] = message;
                 else requestResult.Add(message);
@@ -106,7 +109,7 @@ namespace MQTTGridData
         /// </summary>
         /// <returns>True if successful, False if there is an error</returns>
         internal static bool GetMQTTData(INamedSimioCollection<IAddInPropertyValue> overallSettings, INamedSimioCollection<IAddInPropertyValue> tableSettings,
-            INamedSimioCollection<IGridDataSettings> gridDataSettings, string tableName, out string broker, out string topic, out string qualityOfService, 
+            INamedSimioCollection<IGridDataSettings> gridDataSettings, string tableName, out string broker, out IDictionary<string, string> topics, out string qualityOfService, 
             out string stylesheet, ref List<string> requestDebugFiles, 
             out List<string> requestResults, out string error)
         {
@@ -118,7 +121,10 @@ namespace MQTTGridData
             //
             // Harvest raw values
             broker = (string)overallSettings?["Broker"]?.Value;
-            topic = (string)tableSettings?["Topic"]?.Value;
+            var topicsStr = (string)tableSettings?["Topics"]?.Value;
+            topics = AddInPropertyValueHelper.NameValuePairsFromString(topicsStr);
+            var topicsArr = topics.Select(z => z.Value).ToArray();
+            topicsStr = String.Join(",", topicsArr);
             qualityOfService = (string)tableSettings?["QualityOfService"]?.Value;
             var waitSecondsForRetainedMessages = (double)tableSettings?["WaitSecondsForRetainedMessages"]?.Value;
             stylesheet = (string)tableSettings?["Stylesheet"]?.Value;
@@ -131,9 +137,9 @@ namespace MQTTGridData
                 return false;
             }
 
-            if (String.IsNullOrWhiteSpace(topic))
+            if (topics.Count() == 0)
             {
-                error = "Topic table parameter is not specified";
+                error = "Topics table parameter is not specified";
                 return false;
             }
 
@@ -176,7 +182,7 @@ namespace MQTTGridData
                 else
                 {
                     MQTTGridDataUtils.Responses.Clear();
-                    MQTTGridDataUtils.SubscribeToTopic(tableName, broker, topic, qualityOfService, out var subscribeError);
+                    MQTTGridDataUtils.SubscribeToTopic(tableName, broker, topics, qualityOfService, out var subscribeError);
                     if (subscribeError.Length > 0)
                     {
                         if (MQTTGridDataUtils.MQTTClient != null && MQTTGridDataUtils.MQTTClient.IsConnected) MQTTGridDataUtils.MQTTClient.Disconnect();
@@ -185,7 +191,7 @@ namespace MQTTGridData
                     }
 
                     System.Threading.Thread.Sleep((int)Math.Floor(waitSecondsForRetainedMessages * 1000));
-                    MQTTGridDataUtils.UnSubscribeToTopic(topic, out var unsubscribeError);
+                    MQTTGridDataUtils.UnSubscribeToTopic(topics, out var unsubscribeError);
                     if (unsubscribeError.Length > 0)
                     {
                         throw new Exception(unsubscribeError);
@@ -198,7 +204,7 @@ namespace MQTTGridData
                             throw new Exception(parseError);
                         }
                     }                    
-                    System.Diagnostics.Trace.TraceInformation("Success Retrieving Data from Broker: " + broker + " on Topic " + topic);
+                    System.Diagnostics.Trace.TraceInformation("Success Retrieving Data from Broker: " + broker + " on Topics " + topicsStr);
                 }
                 if (MQTTGridDataUtils.MQTTClient != null && MQTTGridDataUtils.MQTTClient.IsConnected) MQTTGridDataUtils.MQTTClient.Disconnect();
                 MQTTGridDataUtils.MQTTClient = null;
@@ -206,7 +212,7 @@ namespace MQTTGridData
             catch (Exception e)
             {
                 requestResults.Clear();
-                error = $"There was an error attempting to connect to Broker: '{broker}' on Topic: {topic}.  Response: {e.Message}";
+                error = $"There was an error attempting to connect to Broker: '{broker}' on Topics: {topicsStr}.  Response: {e.Message}";
 
 #warning Remove this stack trace addition, we probably don't want to leak this information
                 error += "\nStack trace:" + e.StackTrace;
@@ -295,9 +301,12 @@ namespace MQTTGridData
                 return null;
 
             var broker = (string)context.Settings.Properties["Broker"]?.Value;
-            var topic = (string)context.Settings.GridDataSettings[context.GridDataName]?.Properties["Topic"]?.Value;
+            var topicsStr = (string)context.Settings.GridDataSettings[context.GridDataName]?.Properties["Topics"]?.Value;
+            var topics = AddInPropertyValueHelper.NameValuePairsFromString(topicsStr);
+            var topicsArr = topics.Select(z => z.Value).ToArray();
+            topicsStr = String.Join(",", topicsArr);
 
-            return String.Format("Bound to {0} : {1} table / view", broker, topic);
+            return String.Format("Bound to broker {0} on topics {1}", broker, topicsStr);
         }
 
         public void Dispose()

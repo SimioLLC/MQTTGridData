@@ -40,7 +40,7 @@ namespace MQTTGridData
         /// </summary>
         /// <returns>The XML data returned from the web request</returns>
         /// 
-        internal static void SubscribeToTopic(string tableName, string broker, string topic, string qos, out string responseError)
+        internal static void SubscribeToTopic(string tableName, string broker, IDictionary<string, string> topics, string qos, out string responseError)
         {
             responseError = String.Empty;
 
@@ -54,16 +54,24 @@ namespace MQTTGridData
                     MQTTClient.Connect(clientId);
                 }
 
-                if (topic.Length > 0)
+                MQTTClient.MqttMsgPublishReceived += MqttMsgPublishReceived;
+
+                var topicsArr = topics.Select(z => z.Value).ToArray();
+                var qosArr = new byte[topicsArr.Length];
+
+                int i = 0;
+                foreach(var topic in topicsArr)
                 {
-                    MQTTClient.MqttMsgPublishReceived += MqttMsgPublishReceived;
                     if (qos == QUALITY_OF_SERVICE[0])
-                        MQTTClient.Subscribe(new[] { topic }, new byte[] { MqttMsgBase.QOS_LEVEL_AT_LEAST_ONCE }); 
+                        qosArr[i] = MqttMsgBase.QOS_LEVEL_AT_LEAST_ONCE;
                     else if (qos == QUALITY_OF_SERVICE[1])
-                        MQTTClient.Subscribe(new[] { topic }, new byte[] { MqttMsgBase.QOS_LEVEL_EXACTLY_ONCE });
+                        qosArr[i] = MqttMsgBase.QOS_LEVEL_EXACTLY_ONCE;
                     else
-                        MQTTClient.Subscribe(new[] { topic }, new byte[] { MqttMsgBase.QOS_LEVEL_AT_MOST_ONCE });
+                        qosArr[i] = MqttMsgBase.QOS_LEVEL_AT_MOST_ONCE;
+                    i++;
                 }
+
+                MQTTClient.Subscribe(topicsArr, qosArr);
             }
             catch (Exception ex)
             {
@@ -71,17 +79,16 @@ namespace MQTTGridData
             }            
         }
 
-        internal static void UnSubscribeToTopic(string topic, out string responseError)
+        internal static void UnSubscribeToTopic(IDictionary<string, string> topics, out string responseError)
         {
             responseError = String.Empty;
 
             try
             {
-                if (topic.Length > 0)
-                {
-                    MQTTClient.MqttMsgPublishReceived -= MqttMsgPublishReceived;
-                    MQTTClient.Unsubscribe(new[] { topic });
-                }
+                MQTTClient.MqttMsgPublishReceived -= MqttMsgPublishReceived;
+
+                var topicsArr = topics.Select(z => z.Value).ToArray();
+                MQTTClient.Unsubscribe(topicsArr);                
             }
             catch (Exception ex)
             {

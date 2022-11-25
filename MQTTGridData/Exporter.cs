@@ -258,6 +258,9 @@ namespace MQTTGridData
                 
             }
 
+            if (MQTTGridDataUtils.MQTTClient != null && MQTTGridDataUtils.MQTTClient.IsConnected) MQTTGridDataUtils.MQTTClient.Disconnect();
+            MQTTGridDataUtils.MQTTClient = null;
+
             if (errorLog.Count == 0) return OpenExportDataResult.Succeeded();
             else
             {
@@ -268,8 +271,7 @@ namespace MQTTGridData
 
                 return OpenExportDataResult.Failed(errors);
             }
-            if (MQTTGridDataUtils.MQTTClient != null && MQTTGridDataUtils.MQTTClient.IsConnected) MQTTGridDataUtils.MQTTClient.Disconnect();
-            MQTTGridDataUtils.MQTTClient = null;
+
         }
 
         private static void GetValues(string tableName, IGridDataOverallSettings settings, out string folderName, out string fileName, out bool bUseHeaders, out string separator, out string culture)
