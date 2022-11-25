@@ -1,7 +1,0 @@
-C:\VSOProjects\SimioLLC\MQTTGridData\MQTTGridData\obj\Debug\MQTTGridData.csproj.AssemblyReference.cache
-C:\VSOProjects\SimioLLC\MQTTGridData\MQTTGridData\obj\Debug\MQTTGridData.csproj.CoreCompileInputs.cache
-C:\Users\GlenWirth\OneDrive - Simio LLC\Documents\SimioUserExtensions\MQTTGridData.dll
-C:\Users\GlenWirth\OneDrive - Simio LLC\Documents\SimioUserExtensions\MQTTGridData.pdb
-C:\VSOProjects\SimioLLC\MQTTGridData\MQTTGridData\obj\Debug\MQTTGridData.csproj.CopyComplete
-C:\VSOProjects\SimioLLC\MQTTGridData\MQTTGridData\obj\Debug\MQTTGridData.dll
-C:\VSOProjects\SimioLLC\MQTTGridData\MQTTGridData\obj\Debug\MQTTGridData.pdb
