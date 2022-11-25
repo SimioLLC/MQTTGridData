@@ -44,9 +44,7 @@ namespace MQTTGridData
                         return columnValue;
                     }
                 }
-
-                if (token == "rowmessage") return "${rowmessage}";
-                else if (token == "jsonobject") return "${jsonobject}";
+                if (token == "jsonobject") return "${jsonobject}";
                 else if (token == "jsonarray") return "${jsonarray}";
                 else return String.Empty;
 

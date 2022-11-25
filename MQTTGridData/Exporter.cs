@@ -77,17 +77,6 @@ namespace MQTTGridData
                 "JSONARRAY will convert the source table/log into a JSON Array.    JSONARRAY use the ${jsonarray} token replacement to define where in the message the rows should be placed."; 
             exportTypePropTableProperties.DefaultValue = MQTTGridDataUtils.EXPORT_TYPE[0].ToString();
 
-            var rowMessageProp = schema.PerTableProperties.AddStringProperty("RowMessage");
-            rowMessageProp.DisplayName = "Row Message";
-            rowMessageProp.Description = "Message that will be added per row.   The column mappings will typically be defined within the Row Message.  The ${RowMessage} token replacement is used to define " +
-                "where in the message the row message(s) should be placed.";
-            rowMessageProp.DefaultValue = String.Empty;
-
-            var rowDelimiterProp = schema.PerTableProperties.AddStringProperty("RowDelimiter");
-            rowDelimiterProp.DisplayName = "Row Delimiter";
-            rowDelimiterProp.Description = "Text that will separate each row.   For a JSON message, the delimiter is typically a comma.   For an XML message, there typically will not be a row delimiter.";
-            rowDelimiterProp.DefaultValue = ",";
-
             var statusFileNameProp = schema.PerTableProperties.AddFileProperty("StatusFileName");
             statusFileNameProp.DisplayName = "Status File Name";
             statusFileNameProp.Description = "Status File Name.";
@@ -135,10 +124,6 @@ namespace MQTTGridData
             var retainMessage = (bool)tableSettings?["RetainMessage"]?.Value;
             var requestDebugFileFolder = (string)tableSettings?["RequestDebugFileFolder"]?.Value;
             var exportType = (string)tableSettings?["ExportType"]?.Value;
-            var rowMessage = (string)tableSettings?["RowMessage"]?.Value;
-            string currentRowMessage = String.Empty;
-            string currentMessage = String.Empty;
-            var rowDelimiter = (string)tableSettings?["RowDelimiter"]?.Value;
             var statusFileName = (string)tableSettings?["StatusFileName"]?.Value;
             var statusDelimiter = (string)tableSettings?["StatusDelimiter"]?.Value;
             var statusSeverity = (string)tableSettings?["StatusSeverity"]?.Value;
@@ -168,6 +153,9 @@ namespace MQTTGridData
             var tokenReplacementsStr = (string)tableSettings?["TokenReplacements"]?.Value;
             var tokenReplacements = AddInPropertyValueHelper.NameValuePairsFromString(tokenReplacementsStr);
 
+            var finalMessage = String.Empty;
+            var currentMessage = String.Empty;
+
             foreach (var record in openContext.Records)
             {
                 currentRowNumber++;
@@ -175,7 +163,7 @@ namespace MQTTGridData
 
                 try
                 {
-                    if (exportType.ToUpper() == "COLUMNMAPPING" && rowMessage.Length == 0)
+                    if (exportType.ToUpper() == "COLUMNMAPPING")
                     {
                         int colIndex = 0;
                         foreach (var col in openContext.Records.Columns)
@@ -184,7 +172,7 @@ namespace MQTTGridData
                             colIndex++;
                         }
 
-                        var finalMessage = TokenReplacement.ResolveString(message, tokenReplacements, thisRecordValues);
+                        finalMessage = TokenReplacement.ResolveString(message, tokenReplacements, thisRecordValues);
                         var finalTopic = TokenReplacement.ResolveString(topic, tokenReplacements, thisRecordValues);
 
                         string traceText = "Broker:" + broker + " - Topic:" + finalTopic + " - Message:" + finalMessage;
@@ -198,16 +186,7 @@ namespace MQTTGridData
                     }
                     else
                     {
-                        if (exportType.ToUpper() == "COLUMNMAPPING")
-                        {
-                            currentRowMessage = TokenReplacement.ResolveString(rowMessage, null, thisRecordValues);
-
-                            if (currentMessage.Length > 0)
-                                currentMessage += rowDelimiter + currentRowMessage;
-                            else
-                                currentMessage = currentRowMessage;
-                        }
-                        else if (exportType.ToUpper() == "JSONOBJECT")
+                        if (exportType.ToUpper() == "JSONOBJECT")
                         {
                             object[] thisRow = new object[numberOfColumns];
                             int columnIndex = 0;
@@ -222,6 +201,7 @@ namespace MQTTGridData
                         }
                         else
                         {
+                            // JSONARRAY
                             object[] thisRow = new object[numberOfColumns];
                             int columnIndex = 0;
                             foreach (var col in openContext.Records.Columns)
@@ -233,7 +213,7 @@ namespace MQTTGridData
                             dataArray.Add(thisRow);
                         }
 
-                        if (currentRowNumber >= numberOfRows || (rowMessage.Length == 0 && exportType.ToUpper() == "COLUMNMAPPING"))
+                        if (currentRowNumber >= numberOfRows)
                         {
                             if (exportType.ToUpper() == "JSONOBJECT")
                             {
@@ -243,27 +223,25 @@ namespace MQTTGridData
                                 {
                                     ["jsonobject"] = currentMessage
                                 };
+                                finalMessage = TokenReplacement.ResolveString(message, tokenReplacements, null);
+                                finalMessage = TokenReplacement.ResolveString(finalMessage, rowCallTokenReplacement, null);
                             }
-                            else if (exportType.ToUpper() == "JSONARRAY")
+                            else
                             {
+                                //JSONARRAY
                                 currentMessage = JsonConvert.SerializeObject(dataArray);
                                 dataArray.Clear();
                                 var rowCallTokenReplacement = new Dictionary<string, string>()
                                 {
                                     ["jsonarray"] = currentMessage
                                 };
-                            }
-                            else
-                            {
-                                var rowCallTokenReplacement = new Dictionary<string, string>()
-                                {
-                                    ["rowmessage"] = currentMessage
-                                };
+                                finalMessage = TokenReplacement.ResolveString(message, tokenReplacements, null);
+                                finalMessage = TokenReplacement.ResolveString(finalMessage, rowCallTokenReplacement, null);
                             }
 
-                            string traceText = "Broker:" + broker + " - Topic:" + topic + " - Message:" + currentMessage;
+                            string traceText = "Broker:" + broker + " - Topic:" + topic + " - Message:" + finalMessage;
                             System.Diagnostics.Trace.TraceInformation(traceText);
-                            MQTTGridDataUtils.PublishMessage(table, broker, topic, currentMessage, qualityOfService, retainMessage, out var responseError);
+                            MQTTGridDataUtils.PublishMessage(table, broker, topic, finalMessage, qualityOfService, retainMessage, out var responseError);
                             if (statusFileName.Length > 0 && (statusSeverity.ToLower().Contains("all") || responseError.Length > 0))
                             {
                                 MQTTGridDataUtils.logStatus(openContext.GridDataName, statusFileName, traceText, responseError, statusDelimiter, exportStartTimeOffsetHours);
@@ -290,7 +268,7 @@ namespace MQTTGridData
 
                 return OpenExportDataResult.Failed(errors);
             }
-            if (MQTTGridDataUtils.MQTTClient.IsConnected) MQTTGridDataUtils.MQTTClient.Disconnect();
+            if (MQTTGridDataUtils.MQTTClient != null && MQTTGridDataUtils.MQTTClient.IsConnected) MQTTGridDataUtils.MQTTClient.Disconnect();
             MQTTGridDataUtils.MQTTClient = null;
         }
 
@@ -320,7 +298,7 @@ namespace MQTTGridData
 
         public void Dispose()
         {
-            if (MQTTGridDataUtils.MQTTClient.IsConnected) MQTTGridDataUtils.MQTTClient.Disconnect();
+            if (MQTTGridDataUtils.MQTTClient != null && MQTTGridDataUtils.MQTTClient.IsConnected) MQTTGridDataUtils.MQTTClient.Disconnect();
             MQTTGridDataUtils.MQTTClient = null;
         }
 

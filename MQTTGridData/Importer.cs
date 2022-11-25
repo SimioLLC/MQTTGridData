@@ -179,7 +179,7 @@ namespace MQTTGridData
                     MQTTGridDataUtils.SubscribeToTopic(tableName, broker, topic, qualityOfService, out var subscribeError);
                     if (subscribeError.Length > 0)
                     {
-                        if (MQTTGridDataUtils.MQTTClient.IsConnected) MQTTGridDataUtils.MQTTClient.Disconnect();
+                        if (MQTTGridDataUtils.MQTTClient != null && MQTTGridDataUtils.MQTTClient.IsConnected) MQTTGridDataUtils.MQTTClient.Disconnect();
                         MQTTGridDataUtils.MQTTClient = null;
                         throw new Exception(subscribeError);
                     }
@@ -200,7 +200,7 @@ namespace MQTTGridData
                     }                    
                     System.Diagnostics.Trace.TraceInformation("Success Retrieving Data from Broker: " + broker + " on Topic " + topic);
                 }
-                if (MQTTGridDataUtils.MQTTClient.IsConnected) MQTTGridDataUtils.MQTTClient.Disconnect();
+                if (MQTTGridDataUtils.MQTTClient != null && MQTTGridDataUtils.MQTTClient.IsConnected) MQTTGridDataUtils.MQTTClient.Disconnect();
                 MQTTGridDataUtils.MQTTClient = null;
             }
             catch (Exception e)
@@ -213,7 +213,7 @@ namespace MQTTGridData
 
                 // This is ok, it should just write to the local machine... at least we *think* that's ok...
                 System.Diagnostics.Trace.TraceError(error + "\nStack trace:" + e.StackTrace);
-                if (MQTTGridDataUtils.MQTTClient.IsConnected) MQTTGridDataUtils.MQTTClient.Disconnect();
+                if (MQTTGridDataUtils.MQTTClient != null && MQTTGridDataUtils.MQTTClient.IsConnected) MQTTGridDataUtils.MQTTClient.Disconnect();
                 MQTTGridDataUtils.MQTTClient = null;
                 return false;
             }           
@@ -381,7 +381,7 @@ namespace MQTTGridData
 
         public void Dispose()
         {
-            if (MQTTGridDataUtils.MQTTClient.IsConnected) MQTTGridDataUtils.MQTTClient.Disconnect();
+            if (MQTTGridDataUtils.MQTTClient != null && MQTTGridDataUtils.MQTTClient.IsConnected) MQTTGridDataUtils.MQTTClient.Disconnect();
             MQTTGridDataUtils.MQTTClient = null;
         }
 
