@@ -11,7 +11,7 @@ using System.Globalization;
 using System.Xml.Serialization;
 using Newtonsoft.Json;
 using System.Net.NetworkInformation;
-using uPLibrary.Networking.M2Mqtt;
+using System.Net;
 
 namespace MQTTGridData
 {
@@ -36,6 +36,11 @@ namespace MQTTGridData
             brokerProp.DisplayName = "Broker";
             brokerProp.Description = "Broker Name or IP Address.";
             brokerProp.DefaultValue = String.Empty;
+
+            var portProp = schema.OverallProperties.AddRealProperty("Port");
+            portProp.DisplayName = "Port";
+            portProp.Description = "Port.";
+            portProp.DefaultValue = 1883;
 
             var messageProp = schema.OverallProperties.AddStringProperty("Message");
             messageProp.DisplayName = "Message";
@@ -118,6 +123,7 @@ namespace MQTTGridData
             var tableSettings = openContext.Settings.GridDataSettings[openContext.GridDataName]?.Properties;
             int currentRowNumber = 0;
             var broker = (string)overallSettings?["Broker"]?.Value;
+            var port = Convert.ToInt32((double)overallSettings?["Port"]?.Value);
             var message = (string)overallSettings?["Message"]?.Value;
             var topic = (string)tableSettings?["Topic"]?.Value;
             var qualityOfService = (string)tableSettings?["QualityOfService"]?.Value;
@@ -177,7 +183,8 @@ namespace MQTTGridData
 
                         string traceText = "Broker:" + broker + " - Topic:" + finalTopic + " - Message:" + finalMessage;
                         System.Diagnostics.Trace.TraceInformation(traceText);
-                        MQTTGridDataUtils.PublishMessage(table, broker, finalTopic, finalMessage, qualityOfService, retainMessage, out var responseError);
+                        var responseError = MQTTGridDataUtils.PublishMessageAsync(table, broker, port, finalTopic, finalMessage, qualityOfService, retainMessage).Result;
+
                         if (statusFileName.Length > 0 && (statusSeverity.ToLower().Contains("all") || responseError.Length > 0))
                         {
                             MQTTGridDataUtils.logStatus(openContext.GridDataName, statusFileName, traceText, responseError, statusDelimiter, exportStartTimeOffsetHours);
@@ -241,7 +248,7 @@ namespace MQTTGridData
 
                             string traceText = "Broker:" + broker + " - Topic:" + topic + " - Message:" + finalMessage;
                             System.Diagnostics.Trace.TraceInformation(traceText);
-                            MQTTGridDataUtils.PublishMessage(table, broker, topic, finalMessage, qualityOfService, retainMessage, out var responseError);
+                            var responseError = MQTTGridDataUtils.PublishMessageAsync(table, broker, port, topic, finalMessage, qualityOfService, retainMessage).Result;
                             if (statusFileName.Length > 0 && (statusSeverity.ToLower().Contains("all") || responseError.Length > 0))
                             {
                                 MQTTGridDataUtils.logStatus(openContext.GridDataName, statusFileName, traceText, responseError, statusDelimiter, exportStartTimeOffsetHours);
@@ -258,9 +265,6 @@ namespace MQTTGridData
                 
             }
 
-            if (MQTTGridDataUtils.MQTTClient != null && MQTTGridDataUtils.MQTTClient.IsConnected) MQTTGridDataUtils.MQTTClient.Disconnect();
-            MQTTGridDataUtils.MQTTClient = null;
-
             if (errorLog.Count == 0) return OpenExportDataResult.Succeeded();
             else
             {
@@ -271,7 +275,6 @@ namespace MQTTGridData
 
                 return OpenExportDataResult.Failed(errors);
             }
-
         }
 
         private static void GetValues(string tableName, IGridDataOverallSettings settings, out string folderName, out string fileName, out bool bUseHeaders, out string separator, out string culture)
@@ -292,16 +295,15 @@ namespace MQTTGridData
                 return null;
 
             var broker = (string)context.Settings.Properties["Broker"]?.Value;
+            var port = Convert.ToInt32((double)context.Settings.Properties["Port"]?.Value);
             var tokenReplacementsStr = (string)context.Settings.GridDataSettings[context.GridDataName]?.Properties["TokenReplacements"]?.Value;
             var tokenReplacements = AddInPropertyValueHelper.NameValuePairsFromString(tokenReplacementsStr);
 
-            return $"Bound to Broker: {TokenReplacement.ResolveString(broker, tokenReplacements, null) ?? "[None]"}";
+            return $"Bound to Broker: {TokenReplacement.ResolveString(broker, tokenReplacements, null) + ":" + port.ToString()?? "[None]"}";
         }
 
         public void Dispose()
         {
-            if (MQTTGridDataUtils.MQTTClient != null && MQTTGridDataUtils.MQTTClient.IsConnected) MQTTGridDataUtils.MQTTClient.Disconnect();
-            MQTTGridDataUtils.MQTTClient = null;
         }
 
         private static string GetFormattedStringValue(IGridDataExportRecord record, Int32 colIdx)

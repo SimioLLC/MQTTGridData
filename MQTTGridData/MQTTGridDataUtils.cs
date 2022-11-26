@@ -19,10 +19,12 @@ using System.Xml.Xsl;
 using System.Xml.XPath;
 using System.Runtime.InteropServices;
 using System.Threading;
-using uPLibrary.Networking.M2Mqtt;
-using uPLibrary.Networking.M2Mqtt.Messages;
 using System.Web.UI.WebControls;
 using System.Runtime.Remoting.Messaging;
+using MQTTnet.Client;
+using MQTTnet.Extensions.ManagedClient;
+using MQTTnet;
+using MQTTnet.Server;
 
 namespace MQTTGridData
 {
@@ -32,101 +34,142 @@ namespace MQTTGridData
         public static string[] QUALITY_OF_SERVICE = new string[] { "ATLEASTONCE", "EXACTLYONCE", "ATMOSTONCE" };
         public static string[] STATUS_SEVERITY = new string[] { "ERRORSANDWARNINGS", "ALL" };
         public static string[] EXPORT_TYPE = new string[] { "COLUMNMAPPING", "JSONOBJECT", "JSONARRAY" };
-        public static MqttClient MQTTClient;
+        public static MqttFactory MQTTFactory = null;
+        public static IManagedMqttClient MQTTClient = null;
         public static List<string> Responses = new List<string>();
 
         /// <summary>
         /// Sends a web request, and gets back XML data. If the raw data returned from the request is JSON it is converted to XML.
         /// </summary>
         /// <returns>The XML data returned from the web request</returns>
-        /// 
-        internal static void SubscribeToTopic(string tableName, string broker, IDictionary<string, string> topics, string qos, out string responseError)
+        ///         
+        internal static async Task<String> SubscribeTopicsAsync(string clientId, string broker, Int32 port, IDictionary<string, string> topics, string qos)
         {
-            responseError = String.Empty;
+            var responseError = String.Empty;
+
+            if (MQTTClient == null)
+            {
+                MQTTFactory = new MqttFactory();
+                MQTTClient = MQTTFactory.CreateManagedMqttClient();
+
+                // Create client options object
+                MqttClientOptionsBuilder builder = new MqttClientOptionsBuilder()
+                                                        .WithClientId(clientId)
+                                                        .WithTcpServer(broker, port);
+                                                
+                ManagedMqttClientOptions options = new ManagedMqttClientOptionsBuilder()
+                                        .WithAutoReconnectDelay(TimeSpan.FromSeconds(60))
+                                        .WithClientOptions(builder.Build())
+                                        .Build();                
+
+                await MQTTClient.StartAsync(options);
+
+            }
 
             try
             {
-                if (MQTTClient == null)
-                {
-                    // Create a unique client id
-                    string clientId = $"{tableName}";
-                    MQTTClient = new MqttClient(broker);
-                    MQTTClient.Connect(clientId);
-                }
-
-                MQTTClient.MqttMsgPublishReceived += MqttMsgPublishReceived;
-
+                MQTTClient.ApplicationMessageReceivedAsync += MQTTClient_ApplicationMessageReceivedAsync;
                 var topicsArr = topics.Select(z => z.Value).ToArray();
-                var qosArr = new byte[topicsArr.Length];
-
-                int i = 0;
-                foreach(var topic in topicsArr)
+                foreach (var topic in topicsArr)
                 {
                     if (qos == QUALITY_OF_SERVICE[0])
-                        qosArr[i] = MqttMsgBase.QOS_LEVEL_AT_LEAST_ONCE;
+                        await MQTTClient.SubscribeAsync(topic, MQTTnet.Protocol.MqttQualityOfServiceLevel.AtLeastOnce);
                     else if (qos == QUALITY_OF_SERVICE[1])
-                        qosArr[i] = MqttMsgBase.QOS_LEVEL_EXACTLY_ONCE;
+                        await MQTTClient.SubscribeAsync(topic, MQTTnet.Protocol.MqttQualityOfServiceLevel.ExactlyOnce);
                     else
-                        qosArr[i] = MqttMsgBase.QOS_LEVEL_AT_MOST_ONCE;
-                    i++;
+                        await MQTTClient.SubscribeAsync(topic, MQTTnet.Protocol.MqttQualityOfServiceLevel.AtMostOnce); 
                 }
-
-                MQTTClient.Subscribe(topicsArr, qosArr);
-            }
+            }            
             catch (Exception ex)
             {
                 responseError = ex.Message;
-            }            
+            }
+            return responseError;
         }
 
-        internal static void UnSubscribeToTopic(IDictionary<string, string> topics, out string responseError)
+        internal static Task MQTTClient_ApplicationMessageReceivedAsync(MqttApplicationMessageReceivedEventArgs arg)
         {
-            responseError = String.Empty;
+            Responses.Add(Encoding.UTF8.GetString(arg.ApplicationMessage.Payload, 0, arg.ApplicationMessage.Payload.Length));
+            return Task.CompletedTask;
+        }
 
+        internal static async Task<String> UnSubscribeTopicsAsync(string clientId, string broker, Int32 port, IDictionary<string, string> topics)
+        {
+            var responseError = String.Empty;
+
+            if (MQTTClient == null)
+            {
+                MQTTFactory = new MqttFactory();
+                MQTTClient = MQTTFactory.CreateManagedMqttClient();
+
+                // Create client options object
+                MqttClientOptionsBuilder builder = new MqttClientOptionsBuilder()
+                                                        .WithClientId(clientId)
+                                                        .WithTcpServer(broker, port);
+                ManagedMqttClientOptions options = new ManagedMqttClientOptionsBuilder()
+                                        .WithAutoReconnectDelay(TimeSpan.FromSeconds(60))
+                                        .WithClientOptions(builder.Build())
+                                        .Build();
+
+                
+
+                await MQTTClient.StartAsync(options);
+
+            }
             try
             {
-                MQTTClient.MqttMsgPublishReceived -= MqttMsgPublishReceived;
-
+                MQTTClient.ApplicationMessageReceivedAsync -= MQTTClient_ApplicationMessageReceivedAsync;
                 var topicsArr = topics.Select(z => z.Value).ToArray();
-                MQTTClient.Unsubscribe(topicsArr);                
+                foreach (var topic in topicsArr)
+                {
+                    await MQTTClient.UnsubscribeAsync(topic);
+                }               
             }
             catch (Exception ex)
             {
                 responseError = ex.Message;
             }
+            return responseError;
         }
 
-        internal static void PublishMessage(string table, string broker, string topic, string message, string qos, bool retainMessage, out string responseError)
+        internal static async Task<String> PublishMessageAsync(string clientId, string broker, Int32 port, string topic, string message, string qos, bool retainMessage)
         {
-            responseError = String.Empty;
+            var responseError = String.Empty;
 
             try
             {
                 if (MQTTClient == null)
-                {
-                    // Create a unique client id
-                    string clientId = $"{table}";
-                    MQTTClient = new MqttClient(broker);
-                    MQTTClient.Connect(clientId);
+                { 
+                    MQTTFactory = new MqttFactory();
+                    MQTTClient = MQTTFactory.CreateManagedMqttClient();
+
+                    // Create client options object
+                    MqttClientOptionsBuilder builder = new MqttClientOptionsBuilder()
+                                                            .WithClientId(clientId)
+                                                            .WithTcpServer(broker, port);
+                    ManagedMqttClientOptions options = new ManagedMqttClientOptionsBuilder()
+                                            .WithAutoReconnectDelay(TimeSpan.FromSeconds(60))
+                                            .WithClientOptions(builder.Build())
+                                            .Build();
+
+                    await MQTTClient.StartAsync(options);
+
                 }
 
                 byte[] bytes = Encoding.ASCII.GetBytes(message);
+
                 if (qos == QUALITY_OF_SERVICE[0])
-                    MQTTClient.Publish(topic, bytes, MqttMsgBase.QOS_LEVEL_AT_LEAST_ONCE, retainMessage);
+                    await MQTTClient.EnqueueAsync(topic, message, MQTTnet.Protocol.MqttQualityOfServiceLevel.AtLeastOnce, retainMessage);
                 else if (qos == QUALITY_OF_SERVICE[1])
-                    MQTTClient.Publish(topic, bytes, MqttMsgBase.QOS_LEVEL_EXACTLY_ONCE, retainMessage);
+                    await MQTTClient.EnqueueAsync(topic, message, MQTTnet.Protocol.MqttQualityOfServiceLevel.ExactlyOnce, retainMessage);
                 else
-                    MQTTClient.Publish(topic, bytes, MqttMsgBase.QOS_LEVEL_AT_MOST_ONCE, retainMessage);
+                    await MQTTClient.EnqueueAsync(topic, message, MQTTnet.Protocol.MqttQualityOfServiceLevel.AtMostOnce, retainMessage);
             }
             catch (Exception ex)
             {
                 responseError = ex.Message;
             }
-        }
-
-        private static void MqttMsgPublishReceived(object sender, MqttMsgPublishEventArgs e)
-        {
-            Responses.Add(Encoding.UTF8.GetString(e.Message, 0, e.Message.Length));
+            return responseError;   
         }
 
         internal static string ParseDataToXML(string responseString, string responseDebugFileFolder, out string responseError)
