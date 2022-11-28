@@ -25,6 +25,7 @@ using MQTTnet.Client;
 using MQTTnet.Extensions.ManagedClient;
 using MQTTnet;
 using MQTTnet.Server;
+using static System.Windows.Forms.AxHost;
 
 namespace MQTTGridData
 {
@@ -36,7 +37,7 @@ namespace MQTTGridData
         public static string[] EXPORT_TYPE = new string[] { "COLUMNMAPPING", "JSONOBJECT", "JSONARRAY" };
         public static MqttFactory MQTTFactory = null;
         public static IManagedMqttClient MQTTClient = null;
-        public static List<string> Responses = new List<string>();
+        public static List<string[]> Responses = new List<string[]>();
 
         /// <summary>
         /// Sends a web request, and gets back XML data. If the raw data returned from the request is JSON it is converted to XML.
@@ -89,7 +90,7 @@ namespace MQTTGridData
 
         internal static Task MQTTClient_ApplicationMessageReceivedAsync(MqttApplicationMessageReceivedEventArgs arg)
         {
-            Responses.Add(Encoding.UTF8.GetString(arg.ApplicationMessage.Payload, 0, arg.ApplicationMessage.Payload.Length));
+            Responses.Add(new string[] { Encoding.UTF8.GetString(arg.ApplicationMessage.Payload, 0, arg.ApplicationMessage.Payload.Length), arg.ApplicationMessage.Topic });
             return Task.CompletedTask;
         }
 
@@ -191,7 +192,7 @@ namespace MQTTGridData
             return responseError;
         }
 
-        internal static string ParseDataToXML(string responseString, string responseDebugFileFolder, out string responseError)
+        internal static string ParseDataToXML(string responseString, bool addTopicToMessage, string topic, string responseDebugFileFolder, out string responseError)
         {
             responseError = String.Empty;
 
@@ -219,6 +220,16 @@ namespace MQTTGridData
             else // Default to assume a JSON response
             {
                 xmlDoc = JSONToXMLDoc(responseString, isProbablyJSONObject);
+            }
+
+            if (addTopicToMessage)
+            {
+                XmlElement topicElement = xmlDoc.CreateElement("Topic");
+                topicElement.InnerText = topic;
+                foreach(XmlNode node in xmlDoc.DocumentElement.ChildNodes)
+                {
+                    node.AppendChild(topicElement);
+                }
             }
 
             return xmlDoc.InnerXml;

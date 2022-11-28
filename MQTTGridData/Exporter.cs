@@ -264,11 +264,11 @@ namespace MQTTGridData
                 }                
             }
 
-            var disconnectError = MQTTGridDataUtils.DisconnectAsync();
-            if (disconnectError.Length > 0)
-            {
-                errorLog.Add(disconnectError);
-            }
+            //var disconnectError = MQTTGridDataUtils.DisconnectAsync();
+            //if (disconnectError.Length > 0)
+            //{
+            //    errorLog.Add(disconnectError);
+            //}
 
             if (errorLog.Count == 0) return OpenExportDataResult.Succeeded();
             else

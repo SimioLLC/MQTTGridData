@@ -62,6 +62,11 @@ namespace MQTTGridData
             waitSecondsForRetainedMessagesProp.Description = "Wait Seconds For Retained Messages.";
             waitSecondsForRetainedMessagesProp.DefaultValue = 1.0;
 
+            var addTopicToMessageProp = schema.PerTableProperties.AddBooleanProperty("AddTopicToMesssage");
+            addTopicToMessageProp.DisplayName = "Add Topic To Message";
+            addTopicToMessageProp.Description = "Add Topic To Message.";
+            addTopicToMessageProp.DefaultValue = true;
+
             var stylesheetProp = schema.PerTableProperties.AddXSLTProperty("Stylesheet");
             stylesheetProp.Description = "The transform to apply to the data returned from the web request.";
             stylesheetProp.DefaultValue =
@@ -137,6 +142,7 @@ namespace MQTTGridData
             topicsStr = String.Join(",", topicsArr);
             var qualityOfService = (string)tableSettings?["QualityOfService"]?.Value;
             var waitSecondsForRetainedMessages = (double)tableSettings?["WaitSecondsForRetainedMessages"]?.Value;
+            var addTopicToMessage = (bool)tableSettings?["AddTopicToMesssage"]?.Value;
             stylesheet = (string)tableSettings?["Stylesheet"]?.Value;
             requestDebugFileFolder = (string)tableSettings?["RequestDebugFileFolder"]?.Value;
             responseDebugFileFolder = (string)tableSettings?["ResponseDebugFileFolder"]?.Value;
@@ -215,7 +221,7 @@ namespace MQTTGridData
                     }
                     foreach (var msg in MQTTGridDataUtils.Responses)
                     {
-                        requestResults.Add(MQTTGridDataUtils.ParseDataToXML(msg, responseDebugFileFolder, out var parseError));
+                        requestResults.Add(MQTTGridDataUtils.ParseDataToXML(msg[0], addTopicToMessage, msg[1], responseDebugFileFolder, out var parseError));
                         if (parseError.Length > 0)
                         {
                             throw new Exception(parseError);
