@@ -196,6 +196,11 @@ namespace MQTTGridData
                     var subscribeError = MQTTGridDataUtils.SubscribeTopicsAsync(tableName, broker, port, topics, qualityOfService).Result;
                     Thread.Sleep((int)Math.Floor(waitSecondsForRetainedMessages * 1000));
                     var unsubscribeError = MQTTGridDataUtils.UnSubscribeTopicsAsync(tableName, broker, port, topics).Result;
+                    var disconnectError = MQTTGridDataUtils.DisconnectAsync();
+                    if (subscribeError.Length > 0)
+                    {
+                        throw new Exception(subscribeError);
+                    }
                     if (subscribeError.Length > 0)
                     {
                         throw new Exception(subscribeError);
@@ -203,6 +208,10 @@ namespace MQTTGridData
                     if (unsubscribeError.Length > 0)
                     {
                         throw new Exception(unsubscribeError);
+                    }
+                    if (disconnectError.Length > 0)
+                    {
+                        throw new Exception(disconnectError);
                     }
                     foreach (var msg in MQTTGridDataUtils.Responses)
                     {
@@ -314,6 +323,7 @@ namespace MQTTGridData
 
         public void Dispose()
         {
+
         }
     }
 
@@ -393,6 +403,7 @@ namespace MQTTGridData
 
         public void Dispose()
         { 
+
         }
 
         #endregion

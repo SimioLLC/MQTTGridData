@@ -172,6 +172,25 @@ namespace MQTTGridData
             return responseError;   
         }
 
+        internal static string DisconnectAsync()
+        {
+            var responseError = String.Empty;
+
+            if (MQTTClient != null)
+            {
+                try
+                {
+                    MQTTClient.Dispose();
+                    MQTTClient = null;
+                }
+                catch (Exception ex)
+                {
+                    responseError = ex.Message;
+                }
+            }
+            return responseError;
+        }
+
         internal static string ParseDataToXML(string responseString, string responseDebugFileFolder, out string responseError)
         {
             responseError = String.Empty;

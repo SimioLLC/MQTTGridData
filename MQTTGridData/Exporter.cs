@@ -261,8 +261,13 @@ namespace MQTTGridData
                 {
                     var error = $"There was an error attempting to connect to Broker: '{broker}' on Topic: {topic}.  Response: {e.Message}";
                     errorLog.Add(error);
-                }
-                
+                }                
+            }
+
+            var disconnectError = MQTTGridDataUtils.DisconnectAsync();
+            if (disconnectError.Length > 0)
+            {
+                errorLog.Add(disconnectError);
             }
 
             if (errorLog.Count == 0) return OpenExportDataResult.Succeeded();
