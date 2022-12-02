@@ -109,7 +109,8 @@ namespace MQTTGridData
                 if (requestResult.Count > 0) requestResult[0] = message;
                 else requestResult.Add(message);
             }
-            e.XML = requestResult[0];
+            if (requestResult.Count > 0) e.XML = requestResult[0];
+            else e.XML = "No Results Found";
         }
     }
 
