@@ -1522,12 +1522,12 @@
         </member>
         <member name="P:MQTTnet.Server.MqttClientStatistics.LastPacketReceivedTimestamp">
             <summary>
-            Timestamp of the last package that has been sent to the client ("received" from the client's perspective)
+                Timestamp of the last package that has been sent to the client ("received" from the client's perspective)
             </summary>
         </member>
         <member name="P:MQTTnet.Server.MqttClientStatistics.LastPacketSentTimestamp">
             <summary>
-            Timestamp of the last package that has been received from the client ("sent" from the client's perspective)
+                Timestamp of the last package that has been received from the client ("sent" from the client's perspective)
             </summary>
         </member>
         <member name="P:MQTTnet.Server.MqttSession.IsPersistent">
@@ -1537,7 +1537,7 @@
         </member>
         <member name="T:MQTTnet.Server.TopicHashMaskSubscriptions">
             <summary>
-                Helper class that stores the topic hash mask common to all contained Subscriptions for direct access.
+                Helper class that stores subscriptions by their topic hash mask.
             </summary>
         </member>
         <member name="P:MQTTnet.Server.MqttServerOptions.WriterBufferSize">
