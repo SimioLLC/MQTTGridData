@@ -57,11 +57,11 @@ namespace MQTTGridData
                 MqttClientOptionsBuilder builder = new MqttClientOptionsBuilder()
                                                         .WithClientId(clientId)
                                                         .WithTcpServer(broker, port);
-                                                
+
                 ManagedMqttClientOptions options = new ManagedMqttClientOptionsBuilder()
                                         .WithAutoReconnectDelay(TimeSpan.FromSeconds(60))
                                         .WithClientOptions(builder.Build())
-                                        .Build();                
+                                        .Build();
 
                 await MQTTClient.StartAsync(options);
 
@@ -78,9 +78,9 @@ namespace MQTTGridData
                     else if (qos == QUALITY_OF_SERVICE[1])
                         await MQTTClient.SubscribeAsync(topic, MQTTnet.Protocol.MqttQualityOfServiceLevel.ExactlyOnce);
                     else
-                        await MQTTClient.SubscribeAsync(topic, MQTTnet.Protocol.MqttQualityOfServiceLevel.AtMostOnce); 
+                        await MQTTClient.SubscribeAsync(topic, MQTTnet.Protocol.MqttQualityOfServiceLevel.AtMostOnce);
                 }
-            }            
+            }
             catch (Exception ex)
             {
                 responseError = ex.Message;
@@ -112,7 +112,7 @@ namespace MQTTGridData
                                         .WithClientOptions(builder.Build())
                                         .Build();
 
-                
+
 
                 await MQTTClient.StartAsync(options);
 
@@ -124,7 +124,7 @@ namespace MQTTGridData
                 foreach (var topic in topicsArr)
                 {
                     await MQTTClient.UnsubscribeAsync(topic);
-                }               
+                }
             }
             catch (Exception ex)
             {
@@ -140,7 +140,7 @@ namespace MQTTGridData
             try
             {
                 if (MQTTClient == null)
-                { 
+                {
                     MQTTFactory = new MqttFactory();
                     MQTTClient = MQTTFactory.CreateManagedMqttClient();
 
@@ -170,7 +170,7 @@ namespace MQTTGridData
             {
                 responseError = ex.Message;
             }
-            return responseError;   
+            return responseError;
         }
 
         internal static string DisconnectAsync()
@@ -226,7 +226,7 @@ namespace MQTTGridData
             {
                 XmlElement topicElement = xmlDoc.CreateElement("Topic");
                 topicElement.InnerText = topic;
-                foreach(XmlNode node in xmlDoc.DocumentElement.ChildNodes)
+                foreach (XmlNode node in xmlDoc.DocumentElement.ChildNodes)
                 {
                     node.AppendChild(topicElement);
                 }

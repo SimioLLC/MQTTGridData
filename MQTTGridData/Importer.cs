@@ -119,13 +119,13 @@ namespace MQTTGridData
         public Importer(IGridDataImporterContext context)
         {
         }
-                
+
         /// <summary>
         /// Call to get the web data, either via http on via the sessionCache
         /// </summary>
         /// <returns>True if successful, False if there is an error</returns>
         internal static bool GetMQTTData(INamedSimioCollection<IAddInPropertyValue> overallSettings, INamedSimioCollection<IAddInPropertyValue> tableSettings,
-            INamedSimioCollection<IGridDataSettings> gridDataSettings, string tableName, out string stylesheet, ref List<string> requestDebugFiles, 
+            INamedSimioCollection<IGridDataSettings> gridDataSettings, string tableName, out string stylesheet, ref List<string> requestDebugFiles,
             out List<string> requestResults, out string error)
         {
             requestResults = new List<string>();
@@ -227,7 +227,7 @@ namespace MQTTGridData
                         {
                             throw new Exception(parseError);
                         }
-                    }                    
+                    }
                     System.Diagnostics.Trace.TraceInformation("Success Retrieving Data from Broker: " + broker + " on Topics " + topicsStr);
                 }
             }
@@ -242,7 +242,7 @@ namespace MQTTGridData
                 // This is ok, it should just write to the local machine... at least we *think* that's ok...
                 System.Diagnostics.Trace.TraceError(error + "\nStack trace:" + e.StackTrace);
                 return false;
-            }           
+            }
 
             return true;
         }
@@ -263,7 +263,7 @@ namespace MQTTGridData
             //  probably generally be unique per table. Plus, unlike the web request, we don't need to worry about temporal changes causes changes in the underlying data.
             //
             if (requestResults.Count > 0)
-            { 
+            {
                 foreach (var requestResult in requestResults)
                 {
                     var transformedResult = Simio.Xml.XsltTransform.TransformXmlToDataSet(requestResult, stylesheet, null);
@@ -409,7 +409,7 @@ namespace MQTTGridData
         #region IDisposable Members
 
         public void Dispose()
-        { 
+        {
 
         }
 
@@ -439,7 +439,6 @@ namespace MQTTGridData
                 return String.Format(System.Globalization.CultureInfo.InvariantCulture, "{0}", _dr[index]);
             }
         }
-
-        #endregion
     }
+        #endregion
 }

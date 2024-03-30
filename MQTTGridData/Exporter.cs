@@ -79,7 +79,7 @@ namespace MQTTGridData
                 "of the source table/log.  COLUMNMAPPING use the ${rowmessage} token replacement to define where in the message the rows should be placed. COLUMNMAPPING does not require the " +
                 "${rowmessage} token replacement...The column mapping can be placed in the URL, Form Parameters or Message, but this approarch only works if the rows per call is set to 1. JSONOBJECT " +
                 "will convert the source table/log into a JSON Object and send the JSON Object.  JSONObject use the ${jsonobject} token replacement to define where in the message the rows should be placed. " +
-                "JSONARRAY will convert the source table/log into a JSON Array.    JSONARRAY use the ${jsonarray} token replacement to define where in the message the rows should be placed."; 
+                "JSONARRAY will convert the source table/log into a JSON Array.    JSONARRAY use the ${jsonarray} token replacement to define where in the message the rows should be placed.";
             exportTypePropTableProperties.DefaultValue = MQTTGridDataUtils.EXPORT_TYPE[0].ToString();
 
             var statusFileNameProp = schema.PerTableProperties.AddFileProperty("StatusFileName");
@@ -255,13 +255,13 @@ namespace MQTTGridData
                             }
                             if (responseError.Length > 0) throw new Exception(responseError);
                         }
-                    }  
+                    }
                 }
                 catch (Exception e)
                 {
                     var error = $"There was an error attempting to connect to Broker: '{broker}' on Topic: {topic}.  Response: {e.Message}";
                     errorLog.Add(error);
-                }                
+                }
             }
 
             //var disconnectError = MQTTGridDataUtils.DisconnectAsync();
@@ -304,7 +304,7 @@ namespace MQTTGridData
             var tokenReplacementsStr = (string)context.Settings.GridDataSettings[context.GridDataName]?.Properties["TokenReplacements"]?.Value;
             var tokenReplacements = AddInPropertyValueHelper.NameValuePairsFromString(tokenReplacementsStr);
 
-            return $"Bound to Broker: {TokenReplacement.ResolveString(broker, tokenReplacements, null) + ":" + port.ToString()?? "[None]"}";
+            return $"Bound to Broker: {TokenReplacement.ResolveString(broker, tokenReplacements, null) + ":" + port.ToString() ?? "[None]"}";
         }
 
         public void Dispose()
@@ -333,6 +333,6 @@ namespace MQTTGridData
                     valueStr = String.Format(CultureInfo.InvariantCulture, "{0}", valueDouble);
             }
             return valueStr;
-        }       
+        }
     }
 }
