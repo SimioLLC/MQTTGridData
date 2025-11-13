@@ -1,0 +1,14 @@
+C:\Code\MQTTGridData\MQTTGridData\obj\Debug\net9.0-windows\MQTTGridData.csproj.AssemblyReference.cache
+C:\Code\MQTTGridData\MQTTGridData\obj\Debug\net9.0-windows\MQTTGridData.GeneratedMSBuildEditorConfig.editorconfig
+C:\Code\MQTTGridData\MQTTGridData\obj\Debug\net9.0-windows\MQTTGridData.AssemblyInfoInputs.cache
+C:\Code\MQTTGridData\MQTTGridData\obj\Debug\net9.0-windows\MQTTGridData.AssemblyInfo.cs
+C:\Code\MQTTGridData\MQTTGridData\obj\Debug\net9.0-windows\MQTTGridData.csproj.CoreCompileInputs.cache
+C:\Code\MQTTGridData\MQTTGridData\obj\Debug\net9.0-windows\MQTTGridData.sourcelink.json
+C:\Code\MQTTGridData\Executables\net9.0-windows\MQTTGridData.deps.json
+C:\Code\MQTTGridData\Executables\net9.0-windows\MQTTGridData.dll
+C:\Code\MQTTGridData\Executables\net9.0-windows\MQTTGridData.pdb
+C:\Code\MQTTGridData\MQTTGridData\obj\Debug\net9.0-windows\MQTTGrid.4FECE974.Up2Date
+C:\Code\MQTTGridData\MQTTGridData\obj\Debug\net9.0-windows\MQTTGridData.dll
+C:\Code\MQTTGridData\MQTTGridData\obj\Debug\net9.0-windows\refint\MQTTGridData.dll
+C:\Code\MQTTGridData\MQTTGridData\obj\Debug\net9.0-windows\MQTTGridData.pdb
+C:\Code\MQTTGridData\MQTTGridData\obj\Debug\net9.0-windows\ref\MQTTGridData.dll
